@@ -1,0 +1,27 @@
+[project]
+name = "at1"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Rohan Yadav",email = "rohanyadav60058@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "scikit-learn (==1.5.1)",
+    "pandas (==2.2.2)",
+    "jupyterlab (==4.2.3)",
+    "joblib (==1.4.2)",
+    "xgboost (==2.1.0)",
+    "hyperopt (==0.2.7)",
+    "lightgbm (==4.4.0)",
+    "lime (==0.2.0.1)",
+    "wandb (==0.17.4)",
+    "fastapi (==0.111.0)",
+    "uvicorn (==0.30.1)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
