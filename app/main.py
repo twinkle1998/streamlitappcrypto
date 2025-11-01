@@ -1,5 +1,6 @@
 # ============================================================
 # AT3 — Streamlit Frontend for Cryptocurrency Forecast Portal
+# Bright background version (no dark overlay or glow effects)
 # ============================================================
 
 import streamlit as st
@@ -24,8 +25,11 @@ if str(STUDENTS_PATH) not in sys.path:
 st.set_page_config(page_title="AT3 — Crypto Forecast Portal", layout="wide")
 
 # ============================================================
-# --- BACKGROUND IMAGE (Base64 Embedded) ---
+# --- BACKGROUND IMAGE (Base64 Embedded, bright) ---
 # ============================================================
+
+
+
 def set_background():
     """
     Embeds background image directly as Base64 to avoid path issues.
@@ -53,14 +57,23 @@ def set_background():
               font-family: 'Inter', sans-serif;
             }}
 
+            /* 🪄 Fixed: Stable background (no flicker) + brighter (20% more transparent overlay) */
             .stApp {{
-                background-image: linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0.65)),
-                                  url("data:image/jpg;base64,{encoded}");
+                background: 
+                    linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)),
+                    url("data:image/jpg;base64,{encoded}");
                 background-size: cover;
-                background-position: center;
+                background-position: center center;
                 background-attachment: fixed;
                 background-repeat: no-repeat;
-                position: relative;
+                transition: none !important;
+                animation: none !important;
+                will-change: auto !important;
+            }}
+
+            /* Remove pseudo-element overlay — it caused the “gloom” repaint */
+            .stApp::before {{
+                content: none !important;
             }}
 
             .hero, .token-bar, .team {{
@@ -225,7 +238,6 @@ def set_background():
 # --- DYNAMIC MODULE LOADER ---
 # ============================================================
 def load_student_page(student_name: str):
-    """Dynamically loads and executes a student's Streamlit tab."""
     try:
         module = importlib.import_module(f"{student_name}")
         if hasattr(module, "show_ethereum_tab"):
