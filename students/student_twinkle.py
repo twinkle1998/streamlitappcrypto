@@ -1,6 +1,6 @@
 # ============================================================
 # Twinkle — Ethereum (ETH) Forecasting Dashboard
-# Final Stable Version — Local Cache + Retry + Fallback Fix
+# Optimized Stable Version — Cached API + Retry + Warm-Up
 # ============================================================
 
 import streamlit as st
@@ -10,8 +10,7 @@ import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import date
-import time, threading, random, json
-from functools import lru_cache
+import time, threading
 
 # ----------------------------
 # Constants
@@ -19,6 +18,7 @@ from functools import lru_cache
 COINGECKO = "https://api.coingecko.com/api/v3"
 COIN_ID = "ethereum"
 FASTAPI = "https://fastapiethereum.onrender.com"
+
 
 # ----------------------------
 # Theme Injection
@@ -74,39 +74,20 @@ def _inject_theme():
 
 
 # ----------------------------
-# Helper — Safe Caching Hash
+# Helper — API Fetch (Retry)
 # ----------------------------
-def _make_hashable(params):
-    """Convert dict to hashable string for caching"""
-    if params is None:
-        return None
-    return json.dumps(params, sort_keys=True)
-
-
-# ----------------------------
-# Helper — API Fetch (Retry + Cache + Fallback)
-# ----------------------------
-@lru_cache(maxsize=16)
-def _fetch(url, params_hash=None, retries=3, delay=2):
-    """Fetch JSON with retry, local memory cache, and fallback"""
-    params = json.loads(params_hash) if params_hash else None
+def _fetch(url, params=None, retries=3, delay=2):
+    """Fetch JSON from API with retry + delay"""
     for attempt in range(retries):
         try:
-            r = requests.get(url, params=params, timeout=20)
+            r = requests.get(url, params=params, timeout=25)
             r.raise_for_status()
             return r.json()
         except Exception:
             if attempt < retries - 1:
-                time.sleep(delay + random.uniform(0.3, 1.0))
+                time.sleep(delay)
             else:
-                st.warning("⚠️ API is responding slowly — showing cached or sample data if available.")
-                try:
-                    if "market_chart" in url:
-                        return pd.read_json("backup_market_chart.json").to_dict(orient="records")
-                    elif "ohlc" in url:
-                        return pd.read_json("backup_ohlc.json").to_dict(orient="records")
-                except:
-                    return None
+                return None
 
 
 # ----------------------------
@@ -125,17 +106,15 @@ def get_live_market():
         "include_24hr_vol": "true",
         "include_24hr_change": "true"
     }
-    return _fetch(f"{COINGECKO}/simple/price", _make_hashable(params))
+    return _fetch(f"{COINGECKO}/simple/price", params)
 
 @st.cache_data(ttl=600)
 def get_ohlc(days=90):
-    params = {"vs_currency": "usd", "days": days}
-    return _fetch(f"{COINGECKO}/coins/{COIN_ID}/ohlc", _make_hashable(params))
+    return _fetch(f"{COINGECKO}/coins/{COIN_ID}/ohlc", {"vs_currency": "usd", "days": days})
 
 @st.cache_data(ttl=600)
 def get_market_chart(days=90):
-    params = {"vs_currency": "usd", "days": days}
-    return _fetch(f"{COINGECKO}/coins/{COIN_ID}/market_chart", _make_hashable(params))
+    return _fetch(f"{COINGECKO}/coins/{COIN_ID}/market_chart", {"vs_currency": "usd", "days": days})
 
 
 # ----------------------------
@@ -159,7 +138,6 @@ def plot_candlestick(ohlc):
     )
     return fig
 
-
 def plot_line(series, label, height=280):
     if not series:
         return None
@@ -177,14 +155,12 @@ def plot_line(series, label, height=280):
 
 
 # ----------------------------
-# Background Warm-Up
+# Warm-Up FastAPI Thread
 # ----------------------------
-def _warm_coingecko():
-    """Light background warm-up to reduce initial lag"""
+def _warm_fastapi():
+    """Ping the FastAPI once to wake up Render server"""
     try:
-        get_live_market()
-        get_ohlc(30)
-        get_metadata()
+        requests.get(f"{FASTAPI}/predict/ethereum?date={date.today().isoformat()}", timeout=10)
     except:
         pass
 
@@ -194,10 +170,11 @@ def _warm_coingecko():
 # ----------------------------
 def app():
     _inject_theme()
-    threading.Thread(target=_warm_coingecko, daemon=True).start()
+    threading.Thread(target=_warm_fastapi, daemon=True).start()
 
     st.markdown("<h1 class='heading-yellow'>Ethereum Next-Day High Price Prediction</h1>", unsafe_allow_html=True)
     st.caption("Powered by CoinGecko & FastAPI · AT3 Group 1, UTS 2025")
+
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     # ============================================================
@@ -213,8 +190,7 @@ def app():
     # SECTION 2 — Market Overview KPIs
     # ============================================================
     st.markdown("### Live Market Snapshot")
-    with st.spinner("Loading live market data..."):
-        mk = get_live_market()
+    mk = get_live_market()
     if mk and COIN_ID in mk:
         data = mk[COIN_ID]
         colA, colB, colC, colD = st.columns(4)
@@ -228,7 +204,7 @@ def app():
             with [colA, colB, colC, colD][i]:
                 st.markdown(f"<div class='kpi'><h3>{label}</h3><p>{value}</p></div>", unsafe_allow_html=True)
     else:
-        st.info("Data temporarily unavailable — please retry later.")
+        st.info("Data temporarily unavailable — please retry in a moment.")
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
@@ -236,10 +212,9 @@ def app():
     # SECTION 3 — Historical Charts
     # ============================================================
     st.markdown("### Historical Market Performance")
-    with st.spinner("Fetching historical charts..."):
-        days = 90
-        ohlc = get_ohlc(days)
-        market_chart = get_market_chart(days)
+    days = 90
+    ohlc = get_ohlc(days)
+    market_chart = get_market_chart(days)
 
     fig_candle = plot_candlestick(ohlc)
     if fig_candle:
@@ -260,8 +235,7 @@ def app():
     # SECTION 4 — Project Fundamentals
     # ============================================================
     st.markdown("### Ethereum Fundamentals")
-    with st.spinner("Loading Ethereum fundamentals..."):
-        meta = get_metadata()
+    meta = get_metadata()
     if meta:
         logo = meta["image"]["large"]
         st.markdown(f"<img src='{logo}' width='80'>", unsafe_allow_html=True)
@@ -280,13 +254,9 @@ def app():
     st.markdown("### Summary")
     st.markdown("""
     This dashboard delivers:
-    - Real-time Ethereum market data via CoinGecko (locally cached)
-    - Interactive candlestick and historical charts
-    - Next-day high price prediction via FastAPI ML model
-    - Auto-retry + fallback for stable performance
+    - Real-time Ethereum market data via CoinGecko (cached for 5–10 mins)
+    - Interactive candlestick and historical charts  
+    - Next-day high price prediction via FastAPI ML model  
+    - Automatic retry and warm-up for stable performance  
     """)
     st.caption("Developed by Twinkle · AT3 Group 1 · University of Technology Sydney (2025)")
-
-# Run App
-if __name__ == "__main__":
-    app()
